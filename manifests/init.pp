@@ -12,7 +12,9 @@
 #  class { 'phpbrew': }
 #
 class phpbrew (
-  $php_install_dir = '/opt/phpbrew'
+  String $php_install_dir = '/opt/phpbrew',
+  Boolean $system_wide = false,
+  Array $additional_dependencies = []
 ) {
   case $::operatingsystem {
     centos: {
@@ -29,7 +31,7 @@ class phpbrew (
           'bzip2-devel',
           'libicu-devel',
           'readline-devel'
-        ]
+        ] + $additional_dependencies
 
         exec { 'Installing Development Tools package group':
           command => '/usr/bin/yum -y groupinstall Development Tools'
@@ -103,7 +105,7 @@ class phpbrew (
     subscribe   => File['/usr/bin/phpbrew'],
     refreshonly => true,
   }
-
+  
   file { $php_install_dir:
     ensure  => 'directory',
     require => Exec['init phpbrew'],
@@ -119,12 +121,39 @@ class phpbrew (
     content => "export PHPBREW_ROOT=${php_install_dir}",
     require => Exec['init phpbrew']
   }
-
+  
   # Load phpbrew configuration by default.
-  file_line { 'add phpbrew to bashrc':
-    path    => '/root/.bashrc',
-    line    => 'source /root/.phpbrew/bashrc',
-    require => Exec['init phpbrew'],
+  if $system_wide {
+    ###################################################################
+    # Init as vagrant user to use when need to switch php 
+    # and use it from vagrant console for example for composer command
+    ###################################################################
+    exec { 'init phpbrew as vagrant':
+      command     => '/usr/bin/phpbrew init',
+      creates     => '/home/vagrant/.phpbrew/bashrc',
+      subscribe   => File['/usr/bin/phpbrew'],
+      refreshonly => true,
+      user        => "vagrant",
+      environment => ["HOME=/home/vagrant"],
+    }
+    
+    file { '/opt/phpbrew/bashrc':
+      ensure  => present,
+      content => template('phpbrew/bashrc.erb'),
+      require => Exec['init phpbrew']
+    }
+    
+    file { "/etc/profile.d/phpbrew.sh":
+      ensure  => present,
+      content => template('phpbrew/phpbrew.sh.erb'),
+      require => Exec['init phpbrew']
+    }
+  } else {
+    file_line { 'add phpbrew to bashrc':
+      path    => '/root/.bashrc',
+      line    => 'source /root/.phpbrew/bashrc',
+      require => Exec['init phpbrew'],
+    }
   }
 
   exec { 'update basbrc':
